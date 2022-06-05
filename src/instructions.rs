@@ -13,6 +13,9 @@ pub enum DataSource {
     IndirectRegister16(cpu::Register),
     IndirectRegister16Inc(cpu::Register),
     IndirectRegister16Dec(cpu::Register),
+    IndirectRegister8(cpu::Register),
+    IndirectValue8(u8),
+    IndirectValue16(u16)
 }
 
 impl fmt::Display for DataSource {
@@ -27,7 +30,13 @@ impl fmt::Display for DataSource {
             DataSource::IndirectRegister16Dec(r) =>
                 write!(f, "({}-)", r),
             DataSource::IndirectRegister16Inc(r) =>
-                write!(f, "({}+)", r)
+                write!(f, "({}+)", r),
+            DataSource::IndirectRegister8(r) =>
+                write!(f, "($FF00+{})", r),
+            DataSource::IndirectValue8(v) =>
+                write!(f, "($FF00+${:02x})", v),
+            DataSource::IndirectValue16(v) =>
+                write!(f, "(${:04x})", v)
         }
     }
 }
@@ -38,7 +47,9 @@ pub enum DataDest {
     IndirectRegister16(cpu::Register),
     IndirectRegister16Inc(cpu::Register),
     IndirectRegister16Dec(cpu::Register),
-    IndirectValue16(u16)
+    IndirectValue16(u16),
+    IndirectRegister8(cpu::Register),
+    IndirectValue8(u8)
 }
 
 impl fmt::Display for DataDest {
@@ -52,7 +63,11 @@ impl fmt::Display for DataDest {
             DataDest::IndirectRegister16Dec(r) =>
                 write!(f, "({}-)", r),
             DataDest::IndirectRegister16Inc(r) =>
-                write!(f, "({}+)", r)
+                write!(f, "({}+)", r),
+            DataDest::IndirectRegister8(r) =>
+                write!(f, "($FF00+{})", r),
+            DataDest::IndirectValue8(v) =>
+                write!(f, "($FF00+${:02x})", v)
         }
     }
 }
@@ -73,10 +88,15 @@ pub enum Op {
     And{into : DataDest, from : DataSource},
     Or{into : DataDest, from : DataSource},
     Xor{into : DataDest, from : DataSource},
+    Compare{into : DataSource, from : DataSource},
     JumpRelative{amount : DataSource},
     JumpRelativeIf{condition : cpu::Flag, amount : DataSource},
+    Call{address : DataSource},
+    CallIf{condition : cpu::Flag, address : DataSource},
     Return,
     ReturnIf{condition : cpu::Flag},
+    Push{from : DataSource},
+    Pop{into : DataDest},
 
     Unimplemented(u8)
 }
@@ -111,14 +131,24 @@ impl fmt::Display for Op {
                 write!(f, "OR  {}, {}", into, from),
             Op::Xor{from, into} =>
                 write!(f, "XOR {}, {}", into, from),
+            Op::Compare{from, into} =>
+                write!(f, "CMP {} {}", into, from),
             Op::JumpRelative{amount} => 
                 write!(f, "JR  {}", amount),
             Op::JumpRelativeIf{amount, condition} => 
-                write!(f, "JR{condition} {}", amount),
+                write!(f, "JR {condition} {}", amount),
+            Op::Call{address} =>
+                write!(f, "CALL {}", address),
+            Op::CallIf{condition, address} =>
+                write!(f, "CALL {condition} {}", address),
             Op::Return =>
                 write!(f, "RET"),
             Op::ReturnIf{condition} =>
-                write!(f, "RET{condition}"),
+                write!(f, "RET {condition}"),
+            Op::Push{from} =>
+                write!(f, "PUSH {}", from),
+            Op::Pop{into} =>
+                write!(f, "POP {}", into),
             
             Op::Unimplemented(instr) =>
                 write!(f, "UNIMPLEMENTED {:02x}", instr)
@@ -436,13 +466,108 @@ impl Instruction {
                     into : DataDest::Register8(cpu::Register::A),
                     from : DataSource::Register8(cpu::Register::A)
                 } },
-            
-            [0xCB, a, ..]
-                => Instruction{ size : 2, cycles : 2, op :Op::Unimplemented(0xCB)},
 
-            /*[0x40..=0xBf, ..]
-                => Instruction{ size : 1, cycles : 1, op : Op::Unimplemented(0x01) },
-*/
+            [0xCC, a, b, ..]
+                => Instruction{ size : 3, cycles : 6, op : Op::CallIf {
+                    condition : cpu::Flag::Zero,
+                    address : DataSource::Value16(join_u8(*a, *b))
+                } },
+            [0xDC, a, b, ..]
+                => Instruction{ size : 3, cycles : 6, op : Op::CallIf {
+                    condition : cpu::Flag::Carry,
+                    address : DataSource::Value16(join_u8(*a, *b))
+                } },
+            [0xCD, a, b, ..]
+                => Instruction{ size : 3, cycles : 6, op : Op::Call {
+                    address : DataSource::Value16(join_u8(*a, *b))
+                } },
+            
+            [0x40..=0x7f, ..]
+                => Instruction{ size : 1, cycles : 1, op : Op::Unimplemented(0x7f)},
+
+            [0x80..=0xbf, ..]
+                => Instruction{ size : 1, cycles : 1, op : Op::Unimplemented(0xbf)},
+
+            [0xCB, a, ..]
+                => Instruction{ size : 2, cycles : 2, op : Op::Unimplemented(0xCB)},
+
+            [0xE0, a, ..]
+                => Instruction{ size : 1, cycles : 3, op : Op::Load{
+                    into : DataDest::IndirectValue8(*a),
+                    from : DataSource::Register8(cpu::Register::A)
+                } },
+            [0xF0, a, ..]
+                => Instruction{ size : 2, cycles : 3, op : Op::Load{
+                    into : DataDest::Register8(cpu::Register::A),
+                    from : DataSource::IndirectValue8(*a)
+                } },
+            [0xE2, ..]
+                => Instruction{ size : 1, cycles : 2, op : Op::Load{
+                    into : DataDest::IndirectRegister8(cpu::Register::C),
+                    from : DataSource::Register8(cpu::Register::A)
+                } },
+            [0xF2, ..]
+                => Instruction{ size : 1, cycles : 2, op : Op::Load{
+                    into : DataDest::Register8(cpu::Register::A),
+                    from : DataSource::IndirectRegister8(cpu::Register::C)
+                } },
+
+            
+            
+            [0xC1, ..]
+                => Instruction{ size : 1, cycles : 3, op : Op::Pop{
+                    into : DataDest::Register16(cpu::Register::BC)
+                } },
+            [0xD1, ..]
+                => Instruction{ size : 1, cycles : 3, op : Op::Pop{
+                    into : DataDest::Register16(cpu::Register::DE)
+                } },
+            [0xE1, ..]
+                => Instruction{ size : 1, cycles : 3, op : Op::Pop{
+                    into : DataDest::Register16(cpu::Register::HL)
+                } },
+            [0xF1, ..]
+                => Instruction{ size : 1, cycles : 43, op : Op::Pop{
+                    into : DataDest::Register16(cpu::Register::AF)
+                } },
+            
+            [0xC5, ..]
+                => Instruction{ size : 1, cycles : 4, op : Op::Push{
+                    from : DataSource::Register16(cpu::Register::BC)
+                } },
+            [0xD5, ..]
+                => Instruction{ size : 1, cycles : 4, op : Op::Push{
+                    from : DataSource::Register16(cpu::Register::DE)
+                } },
+            [0xE5, ..]
+                => Instruction{ size : 1, cycles : 4, op : Op::Push{
+                    from : DataSource::Register16(cpu::Register::HL)
+                } },
+            [0xF5, ..]
+                => Instruction{ size : 1, cycles : 4, op : Op::Push{
+                    from : DataSource::Register16(cpu::Register::AF)
+                } },
+
+            [0xC9, ..]
+                => Instruction{ size : 1, cycles : 4, op : Op::Return },
+
+            [0xEA, a, b, ..]
+                => Instruction{ size : 3, cycles : 4, op : Op::Load{
+                    into : DataDest::IndirectValue16(join_u8(*a, *b)),
+                    from : DataSource::Register8(cpu::Register::A)
+                } },
+            [0xFA, a, b, ..]
+                => Instruction{ size : 3, cycles : 4, op : Op::Load{
+                    into : DataDest::Register8(cpu::Register::A),
+                    from : DataSource::IndirectValue16(join_u8(*a, *b))
+                } },
+
+            [0xFE, a, ..]
+                => Instruction{ size : 2, cycles : 2, op : Op::Compare {
+                    from : DataSource::Register8(cpu::Register::A),
+                    into : DataSource::Value8(*a)
+                }},
+
             [a, ..] => Instruction{ size : 0, cycles : 0, op : Op::Unimplemented(*a) },
 
             _ => Instruction{ size : 0, cycles : 0, op : Op::Unimplemented(0) }

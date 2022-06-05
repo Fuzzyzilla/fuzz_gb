@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 #[derive(Debug)]
 pub enum Register {
-    A, B, C, D, E, H, L, BC, DE, HL, SP, PC,
+    A, B, C, D, E, H, L, AF, BC, DE, HL, SP, PC,
 }
 impl Display for Register {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -15,6 +15,7 @@ impl Display for Register {
             Register::E => write!(f, "E"),
             Register::H => write!(f, "H"),
             Register::L => write!(f, "L"),
+            Register::AF => write!(f, "AF"),
             Register::BC => write!(f, "BC"),
             Register::DE => write!(f, "DE"),
             Register::HL => write!(f, "HL"),
