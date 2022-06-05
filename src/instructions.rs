@@ -89,8 +89,8 @@ pub enum Op {
     Or{into : DataDest, from : DataSource},
     Xor{into : DataDest, from : DataSource},
     Compare{into : DataSource, from : DataSource},
-    JumpRelative{amount : DataSource},
-    JumpRelativeIf{condition : cpu::Flag, amount : DataSource},
+    JumpRelative{amount : i8},
+    JumpRelativeIf{condition : cpu::Flag, amount : i8},
     Call{address : DataSource},
     CallIf{condition : cpu::Flag, address : DataSource},
     Return,
@@ -172,12 +172,12 @@ impl Instruction {
                 => Instruction{ size : 2, cycles : 1, op : Op::Stop },
             [0x20, a, ..]
                 => Instruction{ size : 2, cycles : 1, op : Op::JumpRelativeIf {
-                    amount : DataSource::Value8(*a),
+                    amount : *a as i8,
                     condition : cpu::Flag::NotZero 
                 } },
             [0x30, a, ..]
                 => Instruction{ size : 2, cycles : 1, op : Op::JumpRelativeIf {
-                    amount : DataSource::Value8(*a),
+                    amount : *a as i8,
                     condition : cpu::Flag::NotCarry 
                 } },
 
@@ -319,17 +319,17 @@ impl Instruction {
                 } },
             [0x18, a, ..]
                 => Instruction{ size : 2, cycles : 3, op : Op::JumpRelative{
-                    amount : DataSource::Value8(*a)
+                    amount : *a as i8
                 } },
             [0x28, a, ..]
                 => Instruction{ size : 2, cycles : 2, op : Op::JumpRelativeIf{
                     condition : cpu::Flag::Zero,
-                    amount : DataSource::Value8(*a)
+                    amount : *a as i8
                 } },
             [0x38, a, ..]
                 => Instruction{ size : 2, cycles : 2, op : Op::JumpRelativeIf{
                     condition : cpu::Flag::Carry,
-                    amount : DataSource::Value8(*a)
+                    amount : *a as i8
                 } },
             
             [0x09, ..]

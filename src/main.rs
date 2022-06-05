@@ -8,7 +8,7 @@ fn main() {
 
     assert_eq!(data.len(), 256);
 
-    let mut pc : u16 = 0xe6;
+    let mut pc : u16 = 0x00;
     loop {
         let instr_slice = &data[(pc as usize)..];
 
