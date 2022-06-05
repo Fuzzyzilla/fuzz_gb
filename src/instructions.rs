@@ -70,6 +70,7 @@ struct Instruction {
 
 pub fn parse_instruction(data : &[u8]) -> Op {
     match data {
+        
         [0x00, ..]
             => Op::Nop,
         [0x10, ..]
