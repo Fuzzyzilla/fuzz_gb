@@ -22,7 +22,7 @@ impl fmt::Display for DataSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DataSource::Value8(v) => write!(f, "${:02x}", v),
-            DataSource::Value16(v) => write!(f, "${:02x}", v),
+            DataSource::Value16(v) => write!(f, "${:04x}", v),
             DataSource::Register8(r) | DataSource::Register16(r) =>
                 write!(f, "{}", r),
             DataSource::IndirectRegister16(r) =>
@@ -98,6 +98,15 @@ pub enum Op {
     Push{from : DataSource},
     Pop{into : DataDest},
 
+    ShiftLeftAccumulator{into : DataDest},
+    ShiftRightLogical{into : DataDest},
+    ShiftRightAccumulator{into : DataDest},
+    Swap{into : DataDest},
+
+    Bit{into : DataDest, bit : u8},
+    Reset{into : DataDest, bit : u8},
+    Set{into : DataDest, bit : u8},
+
     Unimplemented(u8)
 }
 
@@ -149,6 +158,21 @@ impl fmt::Display for Op {
                 write!(f, "PUSH {}", from),
             Op::Pop{into} =>
                 write!(f, "POP {}", into),
+            Op::Swap{into} =>
+                write!(f, "SWAP {}", into),
+            Op::ShiftLeftAccumulator{into} =>
+                write!(f, "SLA {}", into),
+            Op::ShiftRightAccumulator{into} =>
+                write!(f, "SRA {}", into),
+            Op::ShiftRightLogical{into} =>
+                write!(f, "SRL {}", into),
+            Op::Bit{into, bit} =>
+                write!(f, "BIT {bit}, {}", into),
+            Op::Set{into, bit} =>
+                write!(f, "SET {bit}, {}", into),
+            Op::Reset{into, bit} =>
+                write!(f, "RES {bit}, {}", into),
+
             
             Op::Unimplemented(instr) =>
                 write!(f, "UNIMPLEMENTED {:02x}", instr)
@@ -163,7 +187,7 @@ pub struct Instruction {
 }
 
 impl Instruction {
-    pub fn new(data : &[u8]) -> Instruction {
+    pub fn from_bytes(data : &[u8]) -> Instruction {
         match data {
 
             [0x00, ..]
@@ -488,8 +512,8 @@ impl Instruction {
             [0x80..=0xbf, ..]
                 => Instruction{ size : 1, cycles : 1, op : Op::Unimplemented(0xbf)},
 
-            [0xCB, a, ..]
-                => Instruction{ size : 2, cycles : 2, op : Op::Unimplemented(0xCB)},
+            [0xCB, opcode, ..]
+                => Instruction::extended_instruction_from_opcode(*opcode),
 
             [0xE0, a, ..]
                 => Instruction{ size : 1, cycles : 3, op : Op::Load{
@@ -572,5 +596,54 @@ impl Instruction {
 
             _ => Instruction{ size : 0, cycles : 0, op : Op::Unimplemented(0) }
         }
+    }
+    fn extended_instruction_from_opcode(opcode : u8) -> Instruction {
+        //Bottom 3 bits determines which register to operate on
+        let data_dest = match opcode & 0b0111 {
+            0x0 => DataDest::Register8(cpu::Register::B),
+            0x1 => DataDest::Register8(cpu::Register::C),
+            0x2 => DataDest::Register8(cpu::Register::D),
+            0x3 => DataDest::Register8(cpu::Register::E),
+            0x4 => DataDest::Register8(cpu::Register::H),
+            0x5 => DataDest::Register8(cpu::Register::L),
+            0x6 => DataDest::IndirectRegister16(cpu::Register::HL),
+            0x7 => DataDest::Register8(cpu::Register::A),
+
+            //We masked the lower three bits, it will only ever be 0..=7
+            _ => unreachable!()
+        };
+        //Operation takes 16 cycles if it's indirected, 8 otherwise
+        let opcode_cycles = if let DataDest::IndirectRegister16(_) = data_dest {16} else {8};
+
+        //Top5 bits indicate operation
+        let operation = opcode >> 3;
+        let op = match operation {
+            //RLC
+            0x00 => Op::RolCarry{ into : data_dest },
+            //RRC
+            0x01 => Op::RorCarry{ into : data_dest },
+            //RR
+            0x02 => Op::Ror{ into : data_dest },
+            //RL
+            0x03 => Op::Rol{ into : data_dest },
+            //SLA
+            0x04 => Op::ShiftLeftAccumulator{ into : data_dest },
+            //SRA
+            0x05 => Op::ShiftRightAccumulator{ into : data_dest },
+            //SWAP
+            0x06 => Op::Swap{ into : data_dest },
+            //SRL
+            0x07 => Op::ShiftRightLogical{ into : data_dest },
+            //BIT[0..7]
+            0x08..=0x15 => Op::Bit{ into : data_dest, bit : operation - 0x08 },
+            //RES[0..7]
+            0x16..=0x23 =>  Op::Reset{ into : data_dest, bit : operation - 0x16 },
+            //SET[0..7]
+            0x24..=0x32 => Op::Set{ into : data_dest, bit : operation - 0x24 },
+
+            //We masked to the top 5 bits, will always range 0..=31
+            _ => unreachable!()
+        };
+        Instruction { size : 2, cycles : opcode_cycles, op }
     }
 }

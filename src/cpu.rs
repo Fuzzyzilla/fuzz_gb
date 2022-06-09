@@ -25,8 +25,10 @@ impl Display for Register {
     }
 }
 pub enum Flag {
-    Zero, Negative, HalfCarry, Carry,
-    NotZero, NotNegative, NotHalfCarry, NotCarry,
+    Zero = 7, Negative = 6, HalfCarry = 5, Carry = 4,
+    
+    //Inverted forms are 4 less than their positive conterparts
+    NotZero = 3 , NotNegative = 2, NotHalfCarry = 1, NotCarry = 0,
 }
 impl Display for Flag {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -73,6 +75,46 @@ impl Registers {
     }
     pub fn set_hl(&mut self, value : u16) {
         Registers::set_u16_into_u8s(value, &mut self.h, &mut self.l);
+    }
+    pub fn flag(&self, f : Flag) -> bool {
+        match f {
+            Flag::Zero | Flag::Carry | Flag::HalfCarry | Flag::Negative =>
+                //Test the bit as determined by the flag index
+                self.flags & (f as u8) != 0,
+            Flag::NotZero | Flag::NotCarry | Flag::NotHalfCarry | Flag::NotNegative =>
+                //Inverted constants are four less than their positive counterparts
+                self.flags & (f as u8 + 4) == 0
+        }
+    }
+    pub fn set_flag(&mut self, f : Flag) {
+        match f {
+            Flag::Zero | Flag::Carry | Flag::HalfCarry | Flag::Negative =>
+                //Test the bit as determined by the flag index
+                self.flags |= 1 << f as u8,
+            Flag::NotZero =>
+                self.reset_flag(Flag::Zero),
+            Flag::NotCarry =>
+                self.reset_flag(Flag::Carry),
+            Flag::NotHalfCarry =>
+                self.reset_flag(Flag::HalfCarry),
+            Flag::NotNegative =>
+                self.reset_flag(Flag::Negative),
+        }
+    }
+    pub fn reset_flag(&mut self, f : Flag) {
+        match f {
+            Flag::Zero | Flag::Carry | Flag::HalfCarry | Flag::Negative =>
+                //Test the bit as determined by the flag index
+                self.flags &= !(1 << f as u8),
+            Flag::NotZero =>
+                self.set_flag(Flag::Zero),
+            Flag::NotCarry =>
+                self.set_flag(Flag::Carry),
+            Flag::NotHalfCarry =>
+                self.set_flag(Flag::HalfCarry),
+            Flag::NotNegative =>
+                self.set_flag(Flag::Negative),
+        }
     }
     pub fn set_u8_register(&mut self, r : &Register, value : u8) {
         match r {
