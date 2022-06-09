@@ -84,7 +84,9 @@ pub enum Op {
     Rol{into : DataDest},
     RolCarry{into : DataDest},
     Add{into : DataDest, from : DataSource},
+    AddCarry{into : DataDest, from : DataSource},
     Sub{into : DataDest, from : DataSource},
+    SubCarry{into : DataDest, from : DataSource},
     And{into : DataDest, from : DataSource},
     Or{into : DataDest, from : DataSource},
     Xor{into : DataDest, from : DataSource},
@@ -132,8 +134,12 @@ impl fmt::Display for Op {
                 write!(f, "RLC {}", into),
             Op::Add{from, into} =>
                 write!(f, "ADD {}, {}", into, from),
+            Op::AddCarry{from, into} =>
+                write!(f, "ADC {}, {}", into, from),
             Op::Sub{from, into} =>
                 write!(f, "SUB {}, {}", into, from),
+            Op::SubCarry{from, into} =>
+                write!(f, "SBC {}, {}", into, from),
             Op::And{from, into} =>
                 write!(f, "AND {}, {}", into, from),
             Op::Or{from, into} =>
@@ -507,16 +513,104 @@ impl Instruction {
                 } },
             
             [0x40..=0x7f, ..]
-                => Instruction{ size : 1, cycles : 1, op : Op::Unimplemented(0x7f)},
+                => {
+                    let opcode = data[0];
 
-            [0x80..=0xbf, ..]
-                => Instruction{ size : 1, cycles : 1, op : Op::Unimplemented(0xbf)},
+                    if opcode == 0x76 {
+                        Instruction{ size : 1, cycles : 4, op : Op::Halt }
+                    } else {
+                        let data_source = match opcode & 0b0111 {
+                            0x0 => DataSource::Register8(cpu::Register::B),
+                            0x1 => DataSource::Register8(cpu::Register::C),
+                            0x2 => DataSource::Register8(cpu::Register::D),
+                            0x3 => DataSource::Register8(cpu::Register::E),
+                            0x4 => DataSource::Register8(cpu::Register::H),
+                            0x5 => DataSource::Register8(cpu::Register::L),
+                            0x6 => DataSource::IndirectRegister16(cpu::Register::HL),
+                            0x7 => DataSource::Register8(cpu::Register::A),
+                
+                            //We masked the lower three bits, it will only ever be 0..=7
+                            _ => unreachable!()
+                        };
+                        //Operation takes 8 cycles if it's indirected, 4 otherwise
+                        let mut cycles = if let DataSource::IndirectRegister16(_) = data_source {8} else {4};
+                
+                        //Top5 bits indicate operation
+                        let operation = opcode >> 3;
+                        let op = {
+                            let data_dest = match operation & 0b111 {
+                                0x0 => DataDest::Register8(cpu::Register::B),
+                                0x1 => DataDest::Register8(cpu::Register::C),
+                                0x2 => DataDest::Register8(cpu::Register::D),
+                                0x3 => DataDest::Register8(cpu::Register::E),
+                                0x4 => DataDest::Register8(cpu::Register::H),
+                                0x5 => DataDest::Register8(cpu::Register::L),
+                                0x6 => {
+                                    cycles = 8;
+                                    DataDest::IndirectRegister16(cpu::Register::HL)
+                                },
+                                0x7 => DataDest::Register8(cpu::Register::A),
+                    
+                                //We masked the lower three bits, it will only ever be 0..=7
+                                _ => unreachable!()
+                            };
+                            Op::Load{ into : data_dest, from : data_source }
+                        };
+                        Instruction { size : 1, cycles, op }
+                    }
+                },
+
+            [0x80..=0xBF, ..]
+                => {
+                    let opcode = data[0];
+
+                    let data_source = match opcode & 0b0111 {
+                        0x0 => DataSource::Register8(cpu::Register::B),
+                        0x1 => DataSource::Register8(cpu::Register::C),
+                        0x2 => DataSource::Register8(cpu::Register::D),
+                        0x3 => DataSource::Register8(cpu::Register::E),
+                        0x4 => DataSource::Register8(cpu::Register::H),
+                        0x5 => DataSource::Register8(cpu::Register::L),
+                        0x6 => DataSource::IndirectRegister16(cpu::Register::HL),
+                        0x7 => DataSource::Register8(cpu::Register::A),
+            
+                        //We masked the lower three bits, it will only ever be 0..=7
+                        _ => unreachable!()
+                    };
+                    //Operation takes 8 cycles if it's indirected, 4 otherwise
+                    let cycles = if let DataSource::IndirectRegister16(_) = data_source {8} else {4};
+            
+                    //Top5 bits indicate operation
+                    let operation = (opcode - 0x80) >> 3;
+                    let op = match operation {
+                        //ADD A, _
+                        0x0 => Op::Add{ into : DataDest::Register8(cpu::Register::A), from : data_source},
+                        //ADC A, _
+                        0x1 => Op::AddCarry{ into : DataDest::Register8(cpu::Register::A), from : data_source},
+                        //SUB A, _
+                        0x2 => Op::Sub{ into : DataDest::Register8(cpu::Register::A), from : data_source},
+                        //SBC A, _
+                        0x3 => Op::SubCarry{ into : DataDest::Register8(cpu::Register::A), from : data_source},
+                        //AND A, _
+                        0x4 => Op::And{ into : DataDest::Register8(cpu::Register::A), from : data_source},
+                        //XOR A, _
+                        0x5 => Op::Xor{ into : DataDest::Register8(cpu::Register::A), from : data_source},
+                        //OR A, _
+                        0x6 => Op::Or{ into : DataDest::Register8(cpu::Register::A), from : data_source},
+                        //CP A, _
+                        0x7 => Op::Compare{ into : DataSource::Register8(cpu::Register::A), from : data_source},
+                        
+                        //If opcode is in the range [0x80..=0xbf] minus 80, the top 5 bits will range from 0x00 to 0x07
+                        _ => unreachable!()
+                    };
+                    Instruction { size : 1, cycles, op }
+                }
 
             [0xCB, opcode, ..]
                 => Instruction::extended_instruction_from_opcode(*opcode),
 
             [0xE0, a, ..]
-                => Instruction{ size : 1, cycles : 3, op : Op::Load{
+                => Instruction{ size : 2, cycles : 3, op : Op::Load{
                     into : DataDest::IndirectValue8(*a),
                     from : DataSource::Register8(cpu::Register::A)
                 } },
@@ -613,7 +707,7 @@ impl Instruction {
             _ => unreachable!()
         };
         //Operation takes 16 cycles if it's indirected, 8 otherwise
-        let opcode_cycles = if let DataDest::IndirectRegister16(_) = data_dest {16} else {8};
+        let cycles = if let DataDest::IndirectRegister16(_) = data_dest {16} else {8};
 
         //Top5 bits indicate operation
         let operation = opcode >> 3;
@@ -622,10 +716,10 @@ impl Instruction {
             0x00 => Op::RolCarry{ into : data_dest },
             //RRC
             0x01 => Op::RorCarry{ into : data_dest },
-            //RR
-            0x02 => Op::Ror{ into : data_dest },
             //RL
-            0x03 => Op::Rol{ into : data_dest },
+            0x02 => Op::Rol{ into : data_dest },
+            //RR
+            0x03 => Op::Ror{ into : data_dest },
             //SLA
             0x04 => Op::ShiftLeftAccumulator{ into : data_dest },
             //SRA
@@ -635,15 +729,15 @@ impl Instruction {
             //SRL
             0x07 => Op::ShiftRightLogical{ into : data_dest },
             //BIT[0..7]
-            0x08..=0x15 => Op::Bit{ into : data_dest, bit : operation - 0x08 },
+            0x08..=0x0F => Op::Bit{ into : data_dest, bit : operation - 0x08 },
             //RES[0..7]
-            0x16..=0x23 =>  Op::Reset{ into : data_dest, bit : operation - 0x16 },
+            0x10..=0x17 =>  Op::Reset{ into : data_dest, bit : operation - 0x16 },
             //SET[0..7]
-            0x24..=0x32 => Op::Set{ into : data_dest, bit : operation - 0x24 },
+            0x18..=0x1F => Op::Set{ into : data_dest, bit : operation - 0x24 },
 
             //We masked to the top 5 bits, will always range 0..=31
             _ => unreachable!()
         };
-        Instruction { size : 2, cycles : opcode_cycles, op }
+        Instruction { size : 2, cycles, op }
     }
 }
