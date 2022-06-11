@@ -1,10 +1,24 @@
 use crate::cpu;
 use crate::bitmath;
+use crate::memory::Memory;
 
 use std::fmt;
 
 use bitmath::join_u8;
 
+pub enum MutableData8 {
+    Register8(cpu::Register),
+    IndirectRegister16(cpu::Register),
+    IndirectRegister16Inc(cpu::Register),
+    IndirectRegister16Dec(cpu::Register),
+    IndirectValue8(u8),
+    IndirectValue16(u16)
+}
+
+pub enum Data8 {
+    Immutable(u8),
+    Mutable(MutableData8)
+}
 pub enum DataSource {
     Value8(u8),
     Value16(u16),
@@ -16,6 +30,27 @@ pub enum DataSource {
     IndirectRegister8(cpu::Register),
     IndirectValue8(u8),
     IndirectValue16(u16)
+}
+
+impl DataSource {
+    pub fn read_u8(&self, cpu_state : &mut cpu::Registers, memory : &Memory) -> u8 {
+        match &self {
+            Self::Value8(val)
+                => *val,
+            Self::Register8(register)
+                => cpu_state.get_u8_register(register),
+            Self::IndirectRegister16(register)
+                => memory.read(cpu_state.get_u16_register(register)),
+            Self::IndirectRegister16(register) => {
+                let location = cpu_state.get_u16_register(register);
+                cpu_state.set_u16_register(register, location.wrapping_add(1));
+                memory.read(location)
+            },
+            Self::IndirectRegister16(register)
+                => memory.read(cpu_state.get_u16_register(register)),
+
+        }
+    }
 }
 
 impl fmt::Display for DataSource {
@@ -739,5 +774,13 @@ impl Instruction {
             _ => unreachable!()
         };
         Instruction { size : 2, cycles, op }
+    }
+
+    pub fn evaluate(&self, mem : &mut Memory, state : cpu::Registers) -> cpu::Registers {
+        let (pc, cycles) : (u16, u8) = match &self.op {
+            Op::Nop =>
+                (state.pc + self.size as u16, self.cycles),
+            Op::Add{ into, from }
+        };
     }
 }
