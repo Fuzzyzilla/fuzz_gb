@@ -25,3 +25,9 @@ impl Memory {
         )
     }
 }
+
+impl Default for Memory {
+    fn default() -> Self {
+        Memory { data: [0_u8; 0xffff] }
+    }
+}

@@ -2,25 +2,34 @@
 use std::fmt::Display;
 
 #[derive(Debug)]
-pub enum Register {
-    A, B, C, D, E, H, L, AF, BC, DE, HL, SP, PC,
+pub enum Register8 {
+    A, B, C, D, E, H, L,
 }
-impl Display for Register {
+pub enum Register16 {
+    AF, BC, DE, HL, SP, PC,
+}
+impl Display for Register8 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Register::A => write!(f, "A"),
-            Register::B => write!(f, "B"),
-            Register::C => write!(f, "C"),
-            Register::D => write!(f, "D"),
-            Register::E => write!(f, "E"),
-            Register::H => write!(f, "H"),
-            Register::L => write!(f, "L"),
-            Register::AF => write!(f, "AF"),
-            Register::BC => write!(f, "BC"),
-            Register::DE => write!(f, "DE"),
-            Register::HL => write!(f, "HL"),
-            Register::SP => write!(f, "SP"),
-            Register::PC => write!(f, "PC")
+            Register8::A => write!(f, "A"),
+            Register8::B => write!(f, "B"),
+            Register8::C => write!(f, "C"),
+            Register8::D => write!(f, "D"),
+            Register8::E => write!(f, "E"),
+            Register8::H => write!(f, "H"),
+            Register8::L => write!(f, "L"),
+        }
+    }
+}
+impl Display for Register16 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Register16::AF => write!(f, "AF"),
+            Register16::BC => write!(f, "BC"),
+            Register16::DE => write!(f, "DE"),
+            Register16::HL => write!(f, "HL"),
+            Register16::SP => write!(f, "SP"),
+            Register16::PC => write!(f, "PC")
         }
     }
 }
@@ -58,23 +67,41 @@ pub struct Registers {
 }
 
 impl Registers {
-    pub fn get_bc(&self) -> u16 {
+    pub fn af(&self) -> u16 {
+        Registers::get_u8s_into_u16(self.a, self.flags)
+    }
+    pub fn set_af(&mut self, value : u16) {
+        Registers::set_u16_into_u8s(value, &mut self.a, &mut self.flags);
+    }
+    pub fn bc(&self) -> u16 {
         Registers::get_u8s_into_u16(self.b, self.c)
     }
     pub fn set_bc(&mut self, value : u16) {
         Registers::set_u16_into_u8s(value, &mut self.b, &mut self.c);
     }
-    pub fn get_de(&self) -> u16 {
+    pub fn de(&self) -> u16 {
         Registers::get_u8s_into_u16(self.d, self.e)
     }
     pub fn set_de(&mut self, value : u16) {
         Registers::set_u16_into_u8s(value, &mut self.d, &mut self.e);
     }
-    pub fn get_hl(&self) -> u16 {
+    pub fn hl(&self) -> u16 {
         Registers::get_u8s_into_u16(self.h, self.l)
     }
     pub fn set_hl(&mut self, value : u16) {
         Registers::set_u16_into_u8s(value, &mut self.h, &mut self.l);
+    }
+    pub fn set_pc(&mut self, value : u16) {
+        self.pc = value;
+    }
+    pub fn pc(&self) -> u16 {
+        self.pc
+    }
+    pub fn set_sp(&mut self, value : u16) {
+        self.sp = value;
+    }
+    pub fn sp(&self) -> u16 {
+        self.sp
     }
     pub fn flag(&self, f : Flag) -> bool {
         match f {
@@ -116,55 +143,70 @@ impl Registers {
                 self.set_flag(Flag::Negative),
         }
     }
-    pub fn set_u8_register(&mut self, r : &Register, value : u8) {
+    pub fn set_u8_register(&mut self, r : &Register8, value : u8) {
         match r {
-            Register::A => self.a = value,
-            Register::B => self.b = value,
-            Register::C => self.c = value,
-            Register::D => self.d = value,
-            Register::E => self.e = value,
-            Register::H => self.h = value,
-            Register::L => self.l = value,
-            _ => panic!("Bad register to set to u8 value! {:?}", r)
+            Register8::A => self.a = value,
+            Register8::B => self.b = value,
+            Register8::C => self.c = value,
+            Register8::D => self.d = value,
+            Register8::E => self.e = value,
+            Register8::H => self.h = value,
+            Register8::L => self.l = value,
         };
     }
-    pub fn set_u16_register(&mut self, r : &Register, value : u16) {
+    pub fn set_u16_register(&mut self, r : &Register16, value : u16) {
         match r {
-            Register::BC => self.set_bc(value),
-            Register::DE => self.set_de(value),
-            Register::HL => self.set_hl(value),
-            Register::SP => self.sp = value,
-            Register::PC => self.pc = value,
-            _ => panic!("Bad register to set to u16 value! {:?}", r)
+            Register16::AF => self.set_af(value),
+            Register16::BC => self.set_bc(value),
+            Register16::DE => self.set_de(value),
+            Register16::HL => self.set_hl(value),
+            Register16::SP => self.sp = value,
+            Register16::PC => self.pc = value,
         };
     }
-    pub fn get_u8_register(&self, r : &Register) -> u8 {
+    pub fn get_u8_register(&self, r : &Register8) -> u8 {
         match r {
-            Register::A => self.a,
-            Register::B => self.b,
-            Register::C => self.c,
-            Register::D => self.d,
-            Register::E => self.e,
-            Register::H => self.h,
-            Register::L => self.l,
-            _ => panic!("Bad register to get u8 value! {:?}", r)
+            Register8::A => self.a,
+            Register8::B => self.b,
+            Register8::C => self.c,
+            Register8::D => self.d,
+            Register8::E => self.e,
+            Register8::H => self.h,
+            Register8::L => self.l,
         }
     }
-    pub fn get_u16_register(&self, r : &Register) -> u16 {
+    pub fn get_u8_register_mut<'a>(&'a mut self, r : &Register8) -> &'a mut u8 {
         match r {
-            Register::BC => self.get_bc(),
-            Register::DE => self.get_de(),
-            Register::HL => self.get_hl(),
-            Register::SP => self.sp,
-            Register::PC => self.pc,
-            _ => panic!("Bad register to get u16 value! {:?}", r)
+            Register8::A => &mut self.a,
+            Register8::B => &mut self.b,
+            Register8::C => &mut self.c,
+            Register8::D => &mut self.d,
+            Register8::E => &mut self.e,
+            Register8::H => &mut self.h,
+            Register8::L => &mut self.l,
         }
     }
-    pub fn increment_u16_register(&mut self, r : &Register) {
-        self.set_u16_register(r, self.get_u16_register(r).wrapping_add(1));
+    pub fn get_u16_register(&self, r : &Register16) -> u16 {
+        match r {
+            Register16::AF => self.af(),
+            Register16::BC => self.bc(),
+            Register16::DE => self.de(),
+            Register16::HL => self.hl(),
+            Register16::SP => self.sp,
+            Register16::PC => self.pc,
+        }
     }
-    pub fn increment_u8_register(&mut self, r : &Register) {
-        self.set_u8_register(r, self.get_u8_register(r).wrapping_add(1));
+    pub fn increment_u16_register(&mut self, r : &Register16) -> u16 {
+        let prev = self.get_u16_register(r);
+        self.set_u16_register(r, prev.wrapping_add(1));
+
+        prev
+    }
+    pub fn decrement_u16_register(&mut self, r : &Register16) -> u16 {
+        let prev = self.get_u16_register(r);
+        self.set_u16_register(r, prev.wrapping_sub(1));
+
+        prev
     }
     fn set_u16_into_u8s(value : u16, high : &mut u8, low : &mut u8) {
         *high = ((value >> 8) & 0xff) as u8;
@@ -172,5 +214,23 @@ impl Registers {
     }
     fn get_u8s_into_u16(high : u8, low : u8) -> u16 {
         (high as u16) << 8 | (low as u16)
+    }
+}
+
+impl Default for Registers {
+    fn default() -> Self {
+        return Registers { a: 0, b: 0, c: 0, d: 0, e: 0, h: 0, l: 0, flags: 0, sp: 0, pc: 0 }
+    }
+}
+
+impl Display for Registers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "A: {:02X} F: {:02X}, AF: {:04X}", self.a, self.flags, self.af())?;
+        writeln!(f, "B: {:02X} C: {:02X}, BC: {:04X}", self.b, self.c, self.bc())?;
+        writeln!(f, "H: {:02X} L: {:02X}, HL: {:04X}", self.h, self.l, self.hl())?;
+        writeln!(f, "E: {:02X}", self.e)?;
+        write!(f, "SP: {:04X}  PC : {:04X}", self.sp, self.pc)?;
+
+        Ok(())
     }
 }

@@ -5,6 +5,8 @@ pub mod bitmath;
 pub mod memory;
 mod instructions;
 
+use instructions::Instruction;
+use memory::Memory;
 use ansi_term::Color::Blue;
 
 fn black_box<T>(dummy: T) -> T {
@@ -13,21 +15,21 @@ fn black_box<T>(dummy: T) -> T {
     }
 }
 
-fn disassemble(base_address : u16, data : &[u8]) {
-    let mut pc : u16 = 0x00;
+fn main() {
+    let data = include_bytes!("data/dmg_boot.bin");
+
+    let mut cpu_state = cpu::Registers::default();
+    let mut memory = Memory::default();
+
     loop {
-        let instr_slice = &data[(pc as usize)..];
+        let addr = cpu_state.pc();
+        let instruction = Instruction::from_bytes(addr as usize, data);
 
-        let instruction = instructions::Instruction::from_bytes(instr_slice);
+        if let Some(instruction) = instruction {
 
-        let instruction_data = &data[(pc as usize) .. ((pc + instruction.size as u16) as usize)];
+            print!("{:04X}: ", addr);
 
-        pc += instruction.size as u16;
-
-        if instruction.size == 0 {
-            break
-        } else {
-            print!("{:04X}: ", pc + base_address);
+            let instruction_data = &data[(addr as usize)..((addr + instruction.size as u16) as usize)];
 
             for i in 0..3 {
                 if i < instruction_data.len() {
@@ -38,27 +40,16 @@ fn disassemble(base_address : u16, data : &[u8]) {
             };
 
             println!("| {}", Blue.bold().paint(format!("{}", instruction.op)));
-        }  
 
-        black_box(instruction);
-    }
-}
+            if instruction.size == 0 {
+                break
+            }
 
-fn main() {
-    let data = include_bytes!("data/dmg_boot.bin");
-
-    assert_eq!(data.len(), 256);
-    disassemble(0x0000, &data[0x00..0xA8]);
-    disassemble(0x00E0, &data[0xE0..]);
-    /*
-    let start = Instant::now();
-
-    for i in 0..1_000_000 {
-        disassemble(0x0000, &data[0x00..0xA8]);
-        disassemble(0x00E0, &data[0xE0..]);
+            instruction.execute(&mut cpu_state, &mut memory);
+        } else {
+            break
+        }
     }
 
-    let duration = Instant::now().duration_since(start);
-    
-    println!("{}", duration.as_secs_f32())**/
+    println!{"{}", cpu_state}
 }
